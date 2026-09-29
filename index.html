@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#fff3e0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="合成大奶娃">
+<meta name="description" content="合成大奶娃 · 纯前端小游戏：拖动瞄准、松手投放，相同的撞在一起合成更大的一只。">
+<!-- ↓ Monetag 站点验证：把后台给的 meta 标签粘在下面这一行 ↓ -->
+
+<title>合成大奶娃</title>
+<link rel="stylesheet" href="style.css">
+<!-- ===== 广告位（2026-09-29 第二轮）=====
+
+  ⚠️ 你给的这段「In-Page Push」标签其实是一个 MULTI 组合标签。实测它会在运行时
+     再注入 4 个脚本，把你账号里其它 zone 一起拉起来：
+        ekhay.com/vignette.min.js?z=11921509          Vignette → 就是那个全屏
+                                                     「您是真人吗」开屏广告
+        6opo.com/wrr?z=11921507                       OnClick (Popunder)
+        b3mny.com/tag.min.js?z=11921508               In-Page Push
+        auqot.com/pfe/current/tag.min.js?z=11921510   Push Notifications
+
+     也就是说：开屏广告和 popunder 都不是这段代码本身，是它拉进来的其它 zone，
+     在这里删不掉。已整段停用先止血（popunder 会让"点一下投一个水果"变成
+     "点一下开一个新标签页"，必须马上停）。
+
+     要恢复成「只要 In-Page Push」，需要在 Monetag 后台把 11921509 和 11921507
+     关掉，或者直接用 11921508 那一行单独的标签。
+     重新启用就把下面那行的注释标记去掉。 -->
+<!-- <script src="https://quge5.com/88/tag.min.js" data-zone="288723" async data-cfasync="false"></script> -->
+
+<!-- ===== 广告 SDK =====
+     现在页面上**没有挂任何广告 SDK**，所以「看广告复活」不会出现（REQUIRE_AD = true）。
+     拿到 GameDistribution 的 gameId 之后，把下面整段取消注释、把 GAME_ID_HERE 换掉即可 ——
+     ad.js 会自动检测到 gdsdk 并把复活按钮放出来，不需要改别的代码。
+
+     注意：SDK 必须在页面加载时就引入（官方要求），不要等点了按钮才加载。
+<script>
+  window.GD_OPTIONS = {
+    gameId: "GAME_ID_HERE",
+    onEvent: function (e) {
+      if (window.DNWAd && window.DNWAd.onAdEvent) window.DNWAd.onAdEvent(e);
+    }
+  };
+  (function (d, s, id) {
+    var js, fjs = d.getElementsByTagName(s)[0];
+    if (d.getElementById(id)) return;
+    js = d.createElement(s); js.id = id;
+    js.src = 'https://html5.api.gamedistribution.com/main.min.js';
+    fjs.parentNode.insertBefore(js, fjs);
+  }(document, 'script', 'gamedistribution-jssdk'));
+</script>
+-->
+
+<!-- 早先的 Push Notifications 标签（zone 11921086）已经挪到页面底部、紧挨 ad.js 那一处，
+     这里不再重复挂 —— 同一个 tag 出现两次会重复请求、容易被判重复展示。 -->
+
+<!-- 之前用过的 Vignette（zone 11921268），已停用：
+<script>(function(s){s.dataset.zone='11921268',s.src='https://n6wxm.com/vignette.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script> -->
+</head>
+<body>
+
+<main class="app">
+
+  <!-- ===== 游戏区 ===== -->
+  <section class="stage" id="stage">
+    <canvas id="game" aria-label="合成大奶娃游戏区域"></canvas>
+
+    <div class="overlay" id="overlay">
+      <div class="dialog">
+
+        <!-- ===== 第一屏：越线之后先问要不要救 ===== -->
+        <div class="revive-ask" id="revivePrompt" hidden>
+          <div class="dialog-emoji">😵</div>
+          <h2>还能再救一下</h2>
+          <p class="dialog-score">本局得分 <strong id="reviveScore">0</strong></p>
+          <p class="revive-hint" id="reviveHint">看一段广告，消除最顶上那颗水果，接着玩</p>
+          <div class="dialog-actions">
+            <button class="btn" id="giveUpBtn" type="button">不了，结束吧</button>
+            <button class="btn btn-ad" id="reviveBtn" type="button">📺 看广告复活</button>
+          </div>
+        </div>
+
+        <!-- ===== 第二屏：正式结算 ===== -->
+        <div id="overPanel">
+          <div class="dialog-emoji">🍉</div>
+          <h2 id="overTitle">游戏结束</h2>
+          <p class="dialog-score">本局得分 <strong id="finalScore">0</strong></p>
+          <p class="dialog-best">最高分 <span id="finalBest">0</span></p>
+
+          <div class="submit-box" id="submitBox">
+            <p class="submit-msg" id="submitMsg">正在结算…</p>
+            <p class="my-name">昵称：<strong id="myNameLabel">默认用户</strong>
+              <button class="link-btn" id="editNameBtn" type="button">改昵称</button>
+            </p>
+            <button class="btn" id="submitBtn" type="button" hidden>重试提交</button>
+          </div>
+
+          <div class="dialog-actions">
+            <button class="btn" id="boardBtn2" type="button">🏆 排行榜</button>
+            <button class="btn btn-primary" id="restartBtn" type="button">再来一局</button>
+          </div>
+          <p class="dialog-hint">按 R 键也可重新开始</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 侧边面板 ===== -->
+  <aside class="panel">
+
+    <header class="panel-head">
+      <h1>合成大奶娃</h1>
+      <p class="subtitle">相同的撞在一起，越合越大</p>
+    </header>
+
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-label">分数</span>
+        <strong class="stat-value" id="score">0</strong>
+      </div>
+      <div class="stat">
+        <span class="stat-label">最高分</span>
+        <strong class="stat-value stat-best" id="best">0</strong>
+      </div>
+    </div>
+
+    <div class="next-box">
+      <span class="box-label">下一个</span>
+      <canvas id="next" width="160" height="160" aria-label="下一个"></canvas>
+    </div>
+
+    <div class="chain-box">
+      <span class="box-label">合成表</span>
+      <canvas id="chain" width="680" height="112" aria-label="合成顺序"></canvas>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-wide" id="boardBtn" type="button">
+        <span class="ico">🏆</span><span class="lbl">排行榜</span>
+      </button>
+      <button class="btn" id="soundBtn" type="button" aria-pressed="true">
+        <span class="ico">🔊</span><span class="lbl">音效开</span>
+      </button>
+      <button class="btn btn-primary" id="resetBtn" type="button" title="重新开始">
+        <span class="ico">↻</span><span class="lbl">重开</span>
+      </button>
+    </div>
+
+    <p class="tips">
+      鼠标：移动瞄准、点击投放；触屏：拖动瞄准、松手投放。<br>
+      ← → 微调位置，空格投放，R 重开。
+    </p>
+
+  </aside>
+
+</main>
+
+<!-- ===== 排行榜弹窗 ===== -->
+<div class="modal" id="boardModal" aria-hidden="true" role="dialog" aria-label="排行榜">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2>🏆 最近高手榜</h2>
+      <button class="icon-btn" id="boardClose" type="button" aria-label="关闭">✕</button>
+    </header>
+    <div class="nick-row">
+      <label class="nick-label" for="nickInput">我的昵称</label>
+      <input class="nick-input" id="nickInput" type="text" maxlength="12"
+             placeholder="默认用户" autocomplete="nickname" enterkeyhint="done">
+    </div>
+    <div class="board-list" id="boardList"></div>
+    <footer class="modal-foot">
+      <span class="board-note">只取最近 20 次提交，成绩会被后来的人挤下去</span>
+      <button class="btn" id="boardRefresh" type="button">刷新</button>
+    </footer>
+  </div>
+</div>
+
+<!-- 碰撞形状数据（按贴图轮廓自动生成，由 tools/build_parts.py 产出） -->
+<script src="assets/fruits/parts.js"></script>
+<script src="game.js"></script>
+<!-- 排行榜 -->
+<script src="leaderboard.min.js"></script>
+<!-- ===== 广告 SDK（Monetag，zone 11921086）=====
+     加载失败 / 被拦截 = 没有广告，游戏照常跑，「看广告复活」按钮也不会出现。 -->
+<script src="https://5gvci.com/act/files/tag.min.js?z=11921086" data-cfasync="false" async></script>
+<script src="ad.js"></script>
+</body>
+</html>
